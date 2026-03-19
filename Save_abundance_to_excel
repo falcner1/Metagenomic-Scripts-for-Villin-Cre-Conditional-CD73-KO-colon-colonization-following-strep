@@ -1,0 +1,3 @@
+library(writexl)
+
+write_xlsx(long_data_grouped, "D:/Bioinformatics/long_data_grouped.xlsx")
