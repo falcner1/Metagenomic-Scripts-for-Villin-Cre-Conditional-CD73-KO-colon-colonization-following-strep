@@ -1,0 +1,104 @@
+library(tidyverse)
+library(RColorBrewer)
+library(paletteer)
+library(extrafont)
+
+# Load the data
+full_bracken_data <- read.delim("D:/Bioinformatics/new_ado_family_combined_bracken.tsv", stringsAsFactors = FALSE)
+
+# Select only the fraction columns
+frac_cols <- grep("bracken_frac$", names(full_bracken_data), value = TRUE)
+
+# Reshape to long format
+long_data <- full_bracken_data %>%
+    select(name, all_of(frac_cols)) %>%
+    pivot_longer(cols = -name, names_to = "Sample", values_to = "Fraction")
+
+# Identify top 10 taxa by total abundance
+top_taxa <- long_data %>%
+    group_by(name) %>%
+    summarise(total_fraction = sum(Fraction)) %>%
+    top_n(10, total_fraction) %>%
+    pull(name)
+
+# Replace non-top taxa with "Other Families"
+long_data_grouped <- long_data %>%
+    mutate(name = if_else(name %in% top_taxa, name, "Other Families")) %>%
+    group_by(Sample, name) %>%
+    summarise(Fraction = sum(Fraction), .groups = "drop")
+
+
+# Reorder factor levels so "Other Families" is first (bottom of stack)
+long_data_grouped$name <- factor(long_data_grouped$name,
+                                 levels = c(setdiff(unique(long_data_grouped$name), "Other Families"), "Other Families"))
+
+long_data_grouped <- long_data_grouped %>%
+    mutate(Sample = recode(Sample,
+                           "ko1_0_boutput.bracken_frac" = "KO 1 (day 0)",
+                           "ko1_1_boutput.bracken_frac" = "KO 1 (day 1)",
+                           "ko1_3_boutput.bracken_frac" = "KO 1 (day 3)",
+                           "ko1_6_boutput.bracken_frac" = "KO 1 (day 6)",
+                           "ko2_0_boutput.bracken_frac" = "KO 2 (day 0)",
+                           "ko2_1_boutput.bracken_frac" = "KO 2 (day 1)",
+                           "ko2_3_boutput.bracken_frac" = "KO 2 (day 3)",
+                           "ko2_6_boutput.bracken_frac" = "KO 2 (day 6)",
+                           "ko3_0_boutput.bracken_frac" = "KO 3 (day 0)",
+                           "ko3_1_boutput.bracken_frac" = "KO 3 (day 1)",
+                           "ko3_3_boutput.bracken_frac" = "KO 3 (day 3)",
+                           "ko3_6_boutput.bracken_frac" = "KO 3 (day 6)",
+                           "wt1_0_boutput.bracken_frac" = "WT 1 (day 0)",
+                           "wt1_1_boutput.bracken_frac" = "WT 1 (day 1)",
+                           "wt1_3_boutput.bracken_frac" = "WT 1 (day 3)",
+                           "wt1_6_boutput.bracken_frac" = "WT 1 (day 6)",
+                           "wt2_0_boutput.bracken_frac" = "WT 2 (day 0)",
+                           "wt2_1_boutput.bracken_frac" = "WT 2 (day 1)",
+                           "wt2_3_boutput.bracken_frac" = "WT 2 (day 3)",
+                           "wt2_6_boutput.bracken_frac"= "WT 2 (day 6)",
+                           "wt3_0_boutput.bracken_frac"= "WT 3 (day 0)",
+                           "wt3_1_boutput.bracken_frac"= "WT 3 (day 1)",
+                           "wt3_3_boutput.bracken_frac"= "WT 3 (day 3)",
+                           "wt3_6_boutput.bracken_frac"= "WT 3 (day 6)",
+                           # Add more mappings as needed
+    ))
+
+library(stringr)
+library(forcats)
+library(dplyr)
+
+# Re-derive Group robustly (ignore case, allow flexible spacing like "OA+Ura")
+long_data_grouped <- long_data_grouped %>%
+    mutate(
+        Group = case_when(
+            str_detect(Sample, regex("^WT", ignore_case = TRUE))              ~ "WT",
+            str_detect(Sample, regex("^KO",  ignore_case = TRUE))              ~ "KO",
+            TRUE ~ "other"
+        )
+    )
+
+# Option A: relevel **only** using levels that are present (no warning)
+desired <- c("WT", "KO", "other")
+present <- intersect(desired, unique(long_data_grouped$Group))
+long_data_grouped <- long_data_grouped %>%
+    mutate(Group = factor(Group, levels = present))   # ordered as in `present`
+
+
+
+# Build the final ordered levels:
+sample_levels <- long_data_grouped %>%
+    distinct(Group, Sample) %>%
+    arrange(Group, Sample) %>%
+    pull(Sample)
+
+long_data_grouped <- long_data_grouped %>%
+    mutate(Sample = factor(Sample, levels = sample_levels))
+
+# Plot
+ggplot(long_data_grouped, aes(x = Sample, y = Fraction, fill = name)) +
+    geom_bar(stat = "identity") +
+    labs(title = "Top 10 Families by Relative Abundance",
+         x = "Sample",
+         y = "Relative Abundance",
+         fill = "Family") +
+    theme_classic() +
+    scale_fill_paletteer_d("colorBlindness::ModifiedSpectralScheme11Steps") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
